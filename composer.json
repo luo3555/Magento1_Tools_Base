@@ -1,0 +1,21 @@
+{
+    "name": "tools/magento/base",
+    "description": "Some base script",
+    "type": "lib",
+    "require": {
+        "php": ">=5.5"
+    },
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Daniel.luo",
+            "email": "daniel.luo@silksoftware.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "autoload": {
+        "psr-4": {
+            "Base\\": "Base/"
+        }
+    }
+}

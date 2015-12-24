@@ -4,6 +4,19 @@
   *
   * @package   Tools/Magento
   * @author      Daniel.luo <daniel.luo@silksoftware.com>
+  * 
+  * $dns = [
+  *     'dsn' => 'mysql:dbname=mysql;host=127.0.0.1',
+  *     'user' => 'root',
+  *     'password' => '12345abc'
+  * ];
+  * 
+  * $pdo = new Base\DB($dns);
+  * foreach ($pdo->getDb()->query('SELECT * FROM user') as $row) {
+          * print_r($row);
+          * echo PHP_EOL;
+  * }
+  * unset($pdo);
   */
 namespace Base;
 

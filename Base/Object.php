@@ -314,7 +314,7 @@ class Object implements \ArrayAccess
                 //Varien_Profiler::stop('HAS: '.get_class($this).'::'.$method);
                 return isset($this->_data[$key]);
         }
-        throw new Exception("Invalid method ".get_class($this)."::".$method."(".print_r($args,1).")", 600011);
+        throw new \Exception("Invalid method ".get_class($this)."::".$method."(".print_r($args,1).")", 600011);
     }
 
     /**

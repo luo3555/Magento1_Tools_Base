@@ -24,6 +24,14 @@ class DB extends Object
     protected $_required = ['dsn', 'user', 'password'];
 
 
+    public function __construct($info)
+    {
+        parent::__construct($info);
+        $this->_requiredCheck();
+        $this->init();
+    }
+
+
     /**
      * Required field validate
      *
@@ -47,9 +55,9 @@ class DB extends Object
      */
     public function init()
     {
-        $this->_requiredCheck();
         try {
             $this->_db = new \PDO($this->getDsn(), $this->getUser(), $this->getPassword(), array(\PDO::ATTR_PERSISTENT => true));
+            $this->_db->query("set names utf8");
         } catch ( \Exception $e ) {
             print_r($e->getMessage());
         }
@@ -67,6 +75,9 @@ class DB extends Object
     public function getDb()
     {
         if ($this->_db instanceof \PDO) {
+            if (empty($this->_db)) {
+                $this->_init();
+            }
             return $this->_db;
         }
 

@@ -1,6 +1,9 @@
 <?php
 /**
  * 1. if want to show product in grid page, status and visibility is required field, expect catalog_product_entity_xx table you must add entity data to catalog_product_index_price. if not product can not show on frontend
+ * 2. About configurable product catalog_product_super_attribute define which attribute need config
+ * 3. catalog_product_super_attribute_labe configurable product frontend swatch show label
+ * 4. catalog_product_super_link, simple and configurable product relationship
  */
 class ImportProduct
 {
@@ -41,7 +44,7 @@ class ImportProduct
     public function getAttribute($attributeCode)
     {
         if (!isset($this->_cache[$attributeCode])) {
-            $sql = "SELECT attribute_id, backend_type, frontend_input FROM `eav_attribute` WHERE `entity_type_id` = :entity_type_id AND attribute_code=:attribute_code";
+            $sql = "SELECT attribute_id, backend_type, frontend_input, frontend_label FROM `eav_attribute` WHERE `entity_type_id` = :entity_type_id AND attribute_code=:attribute_code";
             $sth = $this->_pdo->prepare($sql);
             $sth->execute(array(':entity_type_id' => self::ATTR_ENTITY_TYPE_ID, ':attribute_code' => $attributeCode));
             $this->_cache[$attributeCode] = $sth->fetchObject();
@@ -141,6 +144,17 @@ class ImportProduct
         return $this->_cache['customer_group'];
     }
 
+    public function getIdBySku($sku)
+    {
+        if (!isset($this->_cache[$sku])) {
+            $sql = "SELECT entity_id FROM `catalog_product_entity` WHERE `sku`=:sku";
+            $sth = $this->_pdo->prepare($sql);
+            $sth->execute(array(':sku' => $sku));
+            $this->_cache[$sku] = $sth->fetchColumn();
+        }
+        return $this->_cache[$sku];
+    }
+
     public function addProductRecord($rows)
     {
         // current attribute set cache
@@ -148,6 +162,7 @@ class ImportProduct
         foreach ($rows as $row) {
             // set attribute entity type id
             $row = $this->addDefaultField($row);
+            $typeId = $row['type_id'];
 
             $insertCache = $this->getInsertCache($row);
             ////////////////////////////////////////////////////////
@@ -187,8 +202,20 @@ class ImportProduct
                 $this->setProductPrice($entityId, $row);
                 // set product to category
                 $this->assignedCagetories($entityId, $row);
+                // set configurable product config field
+                if ($typeId == 'configurable') {
+                    $this->setConfigurableField($entityId, $row);
+                }
                 
-
+                // add configurable relationship
+                if (isset($row['config_sku'])) {
+                    $confEntityId = $this->getIdBySku($row['config_sku']);
+                    // if exist configurable product
+                    if ($confEntityId) {
+                        $this->assignedSimpleToConfigurable($entityId, $confEntityId);
+                    }
+                }
+                unset($confEntityId);
                 unset($entityId);
             }
             ////////////////////////////////////////////////////////
@@ -232,6 +259,40 @@ class ImportProduct
             $sth = $this->_pdo->prepare($sql);
             $sth->execute(array(':category_id' => $row['category_id'], ':product_id' => $entityId));
         }
+    }
+
+    public function setConfigurableField($entityId, $row)
+    {
+        $sql = "INSERT INTO `catalog_product_super_attribute` (product_id, attribute_id) VALUES (:product_id, :attribute_id)";
+        $attributes = $row['config_attr'];
+        foreach ($attributes as $code) {
+            $band = array(
+                    ':product_id' => $entityId,
+                    ':attribute_id' => $this->_cache[$code]->attribute_id
+                );
+            $sth = $this->_pdo->prepare($sql);
+            $sth->execute($band);
+            $lastId = $this->_pdo->lastInsertId();
+            if ($lastId) {
+                $sql = "INSERT INTO `catalog_product_super_attribute_label` (product_super_attribute_id, store_id, use_default, value) VALUES (:product_super_attribute_id, :store_id, :use_default, :value)";
+                $band = array(
+                        ':product_super_attribute_id' => $lastId,
+                        ':store_id' => self::DEFAULT_STORE,
+                        ':use_default' => 1,
+                        ':value' => $this->_cache[$code]->frontend_label
+                    );
+                $sth = $this->_pdo->prepare($sql);
+                $sth->execute($band);
+            }
+            unset($band);
+            unset($sth);
+        }
+    }
+
+    public function assignedSimpleToConfigurable($productId, $parentId) {
+        $sql = "INSERT INTO `catalog_product_super_link` (product_id, parent_id) VALUES (:product_id, :parent_id)";
+        $sth = $this->_pdo->prepare($sql);
+        $sth->execute(array(':product_id' => $productId, ':parent_id' => $parentId));
     }
 
     protected function addDefaultField($row)
@@ -286,8 +347,11 @@ $rows = array(
         'status' => 1,
         'visibility' => 4,
         'tax_class_id' => 0,
-        'price' => 99,
-        'category_id' => 11
+        'price' => 800,
+        'category_id' => 11,
+        'color' => '',
+        'size' => '',
+        'config_attr' => array('color','size')
     ),
     1 => array(
         'attribute_set_id' => 13, 
@@ -299,12 +363,28 @@ $rows = array(
         'status' => 1,
         'visibility' => 4,
         'tax_class_id' => 0,
-        'price' => 99,
+        'price' => 800,
         'category_id' => 11,
         'config_sku' => $configSku,
         'color' => 24,
         'size' => 78,
-        'config_attr' => array('color','size')
+    ),
+    2 => array(
+        'attribute_set_id' => 13, 
+        // 'color' => 'res', 
+        'sku'=> $time, 
+        'name' => 'import simple test 2' . time(),
+        'type_id' => 'simple', // configurable
+        'vendor_id' => 1111,
+        'status' => 1,
+        'visibility' => 4,
+        'tax_class_id' => 0,
+        'price' => 800,
+        'category_id' => 11,
+        'config_sku' => $configSku,
+        'color' => 20,
+        'size' => 230,
     ),
 );
 $obj->addProductRecord($rows);
+// print_r($obj->getIdBySku('1492598284'));

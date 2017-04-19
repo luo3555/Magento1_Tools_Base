@@ -1,11 +1,17 @@
 <?php
+/**
+ * 1. if want to show product in grid page, status and visibility is required field, expect catalog_product_entity_xx table you must add entity data to catalog_product_index_price. if not product can not show on frontend
+ */
 class ImportProduct
 {
-    const DSN = 'mysql:dbname=magento1922;host=localhost';
+    const DSN = 'mysql:dbname=magento_1932;host=localhost';
     const USER = 'root';
     const PASSWORD = '12345abc';
 
     const ATTR_ENTITY_TYPE_ID = 4;
+    const DEFAULT_STORE = 0;
+    const DEFAULT_WEBSITE = 1;
+    const DEFAULT_TAX_CLASS_ID = 0;
 
     protected $_pdo;
 
@@ -13,7 +19,9 @@ class ImportProduct
 
     protected $_entityFields = array(
             'entity_type_id', 'attribute_set_id', 'type_id', 'sku', 
-            'has_options', 'required_options', 'created_at', 'updated_at'
+            'has_options', 'required_options', 'created_at', 'updated_at',
+            // custome field
+            'vendor_id'
         );
 
     protected $_cache = array();
@@ -23,7 +31,7 @@ class ImportProduct
         try {
             $this->_pdo = new PDO(self::DSN, self::USER, self::PASSWORD, array(PDO::ATTR_PERSISTENT => true));
         } catch (Exception $e) {
-            $this->msg($e->getMessage());
+            $this->_error($e->getMessage());
         }
     }
 
@@ -41,6 +49,24 @@ class ImportProduct
         return $this->_cache[$attributeCode];
     }
 
+    /**
+     * Access this function we can auto get table and insert sql and need insert fields
+     * 
+     * array(
+     *     'table1' => array(
+     *         'fields' => array(
+     *             'name' => text,
+     *             ...
+     *         ),
+     *         'sql' => 'INSERT INTO catalog_product_entity_varchar (`entity_type_id`,`attribute_id`,`store_id`,`entity_id`,`value`) VALUES (4,:attribute_id,0,:entity_id,:value)
+'
+     *     ),
+     *     'table2' => array(
+     *         ...
+     *     ),
+     * )
+     * 
+     */
     public function getInsertCache($insertData)
     {
         $attributeSetId = $insertData['attribute_set_id'];
@@ -68,14 +94,48 @@ class ImportProduct
             // create insert sql cache
             foreach ($this->_cache[$attributeSetId] as $table => $data) {
                 // if php version > 5.6 we can use array_walk replace
+                $band = array();
                 $fields = array();
-                foreach (array_keys($data['fields']) as $field) {
-                    $fields[] = ':' . $field;
+                // if is main table
+                if ($table == $this->_prefix) {
+                    foreach (array_keys($data['fields']) as $field) {
+                        $band[] = ':' . $field;
+                    }
+                    $fileds = implode(',', array_keys($data['fields']));
+                    $band = implode(',', $band);
+                } else {
+                    // if is eav table
+                    $fields[] = '`entity_type_id`';
+                    $band[]   = self::ATTR_ENTITY_TYPE_ID;
+                    $fields[] = '`attribute_id`';
+                    $band[]   = ':attribute_id';
+                    $fields[] = '`store_id`';
+                    $band[]   = self::DEFAULT_STORE;
+                    $fields[] = '`entity_id`';
+                    $band[]   = ':entity_id';
+                    $fields[] = '`value`';
+                    $band[]   = ':value';
+                    $fileds   = implode(',', $fields);
+                    $band     = implode(',', $band);
                 }
-                $this->_cache[$attributeSetId][$table]['sql'] = sprintf('INSERT INTO %s (%s) VALUES (%s)', $table, implode(',', array_keys($data['fields'])), implode(',', $fields));
+                $this->_cache[$attributeSetId][$table]['sql'] = sprintf('INSERT INTO %s (%s) VALUES (%s)', $table, $fileds, $band);
+                unset($fileds);
+                unset($band);
             }
         }
         return $this->_cache[$attributeSetId];
+    }
+
+    protected function getGroups()
+    {
+        if (!isset($this->_cache['customer_group'])) {
+            $sth = $this->_pdo->prepare("SELECT * FROM `customer_group`");
+            $sth->execute();
+            foreach ($sth->fetchAll(PDO::FETCH_CLASS) as $item) {
+                $this->_cache['customer_group'][] = $item;
+            }
+        }
+        return $this->_cache['customer_group'];
     }
 
     public function addProductRecord($rows)
@@ -83,30 +143,108 @@ class ImportProduct
         // current attribute set cache
         // insert record one by one
         foreach ($rows as $row) {
+            // set attribute entity type id
+            $row = $this->addDefaultField($row);
+
             $insertCache = $this->getInsertCache($row);
             ////////////////////////////////////////////////////////
             if (!empty($insertCache)) {
+                $entityId = '';
                 foreach ($insertCache as $table => $info) {
                     // start create entity
                     // create entity id
                     if (!empty($info['fields'])) {
                         $sth = $this->_pdo->prepare($info['sql']);
                         $band = array();
-                        foreach ($info['fields'] as $field => $type) {
-                            $band[':' . $field] = $row[$field];
+                        // if is not catalog_product_entity table
+                        // add require default field
+                        if ($table == $this->_prefix) {
+                            foreach ($info['fields'] as $field => $type) {
+                                // if is default field
+                                $band[':' . $field] = $row[$field];
+                            }
+                            // create entity record
+                            $sth->execute($band);
+                            // get entity id
+                            $entityId = $this->_pdo->lastInsertId();
+                            // assigen product to main website
+                            $this->assignedWebsite($entityId);
+
+                            // set product price and tax class
+                            $this->setProductPrice($entityId, $row);
+                        } else {
+                            foreach ($info['fields'] as $field => $type) {
+                                $band[':attribute_id'] = $this->_cache[$field]->attribute_id;
+                                $band[':entity_id'] = $entityId;
+                                $band[':value'] = $row[$field];
+                                $sth = $this->_pdo->prepare($info['sql']);
+                                $sth->execute($band);
+                            }
                         }
-                        $sth->execute($band);
-                        print_r($band);
                     }
                 }
+                unset($entityId);
             }
             ////////////////////////////////////////////////////////
         }
     }
 
+    protected function assignedWebsite($entityId)
+    {
+        $sth = $this->_pdo->prepare("INSERT INTO `catalog_product_website` (`product_id`, `website_id`) VALUES(:product_id, :website_id)");
+        $sth->execute(array(':product_id' => $entityId, ':website_id' => self::DEFAULT_WEBSITE));
+    }
+
+    protected function setProductPrice($entityId, $rowData)
+    {
+        // if not tier and group price
+        // @TODO insert tier and group price
+        $sql = "INSERT INTO `catalog_product_index_price` (entity_id, customer_group_id, website_id, tax_class_id, price, final_price, min_price, max_price) VALUES(:entity_id, :customer_group_id, :website_id, :tax_class_id, :price, :final_price, :min_price, :max_price)";
+
+        foreach ($this->getGroups() as $group) {
+            $band = array(
+                    ':entity_id' => $entityId,
+                    ':customer_group_id' => $group->customer_group_id,
+                    ':website_id' => self::DEFAULT_WEBSITE,
+                    ':tax_class_id' => self::DEFAULT_TAX_CLASS_ID,
+                    ':price' => $rowData['price'],
+                    ':final_price' => $rowData['price'],
+                    ':min_price' => $rowData['price'],
+                    ':max_price' => $rowData['price'],
+                );
+            $sth = $this->_pdo->prepare($sql);
+            $sth->execute($band);
+        }
+
+    }
+
+    protected function addDefaultField($row)
+    {
+        // set attribute entity type id
+        $row['entity_type_id'] = self::ATTR_ENTITY_TYPE_ID;
+        // set options and required options
+        if ($row['type_id'] == 'configurable') {
+            $row['has_options'] = 1;
+            $row['required_options'] = 1;
+            // 'has_options', 'required_options'
+        }
+        // add time
+        $row['created_at'] = date('Y-m-d h:m:i', time());
+        // $row['updated_at'] = '';
+        $row['visibility'] = 4;
+        return $row;
+    }
+
 
 
     // Create simple product
+    protected function _error($msg)
+    {
+        echo PHP_EOL;
+        print_r($msg);
+        echo PHP_EOL;
+        exit;
+    }
     
 
     public function msg($msg, $level = 'error')
@@ -121,16 +259,13 @@ $rows = array(
         'attribute_set_id' => 4, 
         // 'color' => 'res', 
         'sku'=> time(), 
-        'name' => 'import test',
+        'name' => 'import test' . time(),
         'type_id' => 'simple',
+        'vendor_id' => 1111,
+        'status' => 1,
+        'visibility' => 4,
+        'tax_class_id' => 0,
+        'price' => 99
     )
 );
-// $res = $obj->getInsertCache(array(
-//     'attribute_set_id' => 4, 
-//     // 'color' => 'res', 
-//     'sku'=> time(), 
-//     'name' => 'import test',
-//     'type_id' => 'simple',
-//     ));
-// print_r($res);
 $obj->addProductRecord($rows);

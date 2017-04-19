@@ -70,29 +70,32 @@ class ImportProduct
     public function getInsertCache($insertData)
     {
         $attributeSetId = $insertData['attribute_set_id'];
+        $typeId = $insertData['type_id'];
 
         // just base on input array create insert cache
-        if (!isset($this->_cache[$attributeSetId])) {
+        if (!isset($this->_cache[$attributeSetId][$typeId])) {
             // get insert data fields
             foreach ($insertData as $attributeCode => $value) {
                 $type = '';
                 if (!in_array($attributeCode, $this->_entityFields)) {
                     // get attribute id and type by code
                     $attribute = $this->getAttribute($attributeCode);
+                    // if not get attribute
+                    if (empty($attribute)) continue;
                     // mapping static to entity table
                     $type = $attribute->backend_type == 'static' ? '' : $attribute->backend_type;
                     $type = empty($type) ? '' : '_' . $type ;
                 }
                 // construct insert cache
-                if (!isset($this->_cache[$attributeSetId][$this->_prefix . $type])) {
-                    $this->_cache[$attributeSetId][$this->_prefix . $type] = array();
-                    $this->_cache[$attributeSetId][$this->_prefix . $type]['fields'] = array();
+                if (!isset($this->_cache[$attributeSetId][$typeId][$this->_prefix . $type])) {
+                    $this->_cache[$attributeSetId][$typeId][$this->_prefix . $type] = array();
+                    $this->_cache[$attributeSetId][$typeId][$this->_prefix . $type]['fields'] = array();
                 }
-                $this->_cache[$attributeSetId][$this->_prefix . $type]['fields'][$attributeCode] = isset($attribute) ? $attribute->frontend_input : '' ;
+                $this->_cache[$attributeSetId][$typeId][$this->_prefix . $type]['fields'][$attributeCode] = !empty($attribute) ? $attribute->frontend_input : '' ;
                 unset($attribute);
             }
             // create insert sql cache
-            foreach ($this->_cache[$attributeSetId] as $table => $data) {
+            foreach ($this->_cache[$attributeSetId][$typeId] as $table => $data) {
                 // if php version > 5.6 we can use array_walk replace
                 $band = array();
                 $fields = array();
@@ -118,12 +121,12 @@ class ImportProduct
                     $fileds   = implode(',', $fields);
                     $band     = implode(',', $band);
                 }
-                $this->_cache[$attributeSetId][$table]['sql'] = sprintf('INSERT INTO %s (%s) VALUES (%s)', $table, $fileds, $band);
+                $this->_cache[$attributeSetId][$typeId][$table]['sql'] = sprintf('INSERT INTO %s (%s) VALUES (%s)', $table, $fileds, $band);
                 unset($fileds);
                 unset($band);
             }
         }
-        return $this->_cache[$attributeSetId];
+        return $this->_cache[$attributeSetId][$typeId];
     }
 
     protected function getGroups()
@@ -167,11 +170,6 @@ class ImportProduct
                             $sth->execute($band);
                             // get entity id
                             $entityId = $this->_pdo->lastInsertId();
-                            // assigen product to main website
-                            $this->assignedWebsite($entityId);
-
-                            // set product price and tax class
-                            $this->setProductPrice($entityId, $row);
                         } else {
                             foreach ($info['fields'] as $field => $type) {
                                 $band[':attribute_id'] = $this->_cache[$field]->attribute_id;
@@ -183,6 +181,14 @@ class ImportProduct
                         }
                     }
                 }
+                // assigen product to main website
+                $this->assignedWebsite($entityId);
+                // set product price and tax class
+                $this->setProductPrice($entityId, $row);
+                // set product to category
+                $this->assignedCagetories($entityId, $row);
+                
+
                 unset($entityId);
             }
             ////////////////////////////////////////////////////////
@@ -215,7 +221,17 @@ class ImportProduct
             $sth = $this->_pdo->prepare($sql);
             $sth->execute($band);
         }
+    }
 
+    public function assignedCagetories($entityId, $row)
+    {
+        if (isset($row['category_id'])) {
+            // @TODO direct insert category id
+            // Current if not reindex product can not show on frontend
+            $sql = "INSERT INTO `catalog_category_product` (category_id, product_id) VALUE(:category_id, :product_id)";
+            $sth = $this->_pdo->prepare($sql);
+            $sth->execute(array(':category_id' => $row['category_id'], ':product_id' => $entityId));
+        }
     }
 
     protected function addDefaultField($row)
@@ -227,6 +243,9 @@ class ImportProduct
             $row['has_options'] = 1;
             $row['required_options'] = 1;
             // 'has_options', 'required_options'
+        } else {
+            $row['has_options'] = 0;
+            $row['required_options'] = 0;
         }
         // add time
         $row['created_at'] = date('Y-m-d h:m:i', time());
@@ -254,18 +273,38 @@ class ImportProduct
 }
 
 $obj = new ImportProduct();
+$time = time();
+$configSku = 'config-' . $time;
 $rows = array(
     0 => array(
-        'attribute_set_id' => 4, 
+        'attribute_set_id' => 13, 
         // 'color' => 'res', 
-        'sku'=> time(), 
-        'name' => 'import test' . time(),
-        'type_id' => 'simple',
+        'sku'=> $configSku, 
+        'name' => 'import config test ' . time(),
+        'type_id' => 'configurable', // configurable
         'vendor_id' => 1111,
         'status' => 1,
         'visibility' => 4,
         'tax_class_id' => 0,
-        'price' => 99
-    )
+        'price' => 99,
+        'category_id' => 11
+    ),
+    1 => array(
+        'attribute_set_id' => 13, 
+        // 'color' => 'res', 
+        'sku'=> $time, 
+        'name' => 'import simple test' . time(),
+        'type_id' => 'simple', // configurable
+        'vendor_id' => 1111,
+        'status' => 1,
+        'visibility' => 4,
+        'tax_class_id' => 0,
+        'price' => 99,
+        'category_id' => 11,
+        'config_sku' => $configSku,
+        'color' => 24,
+        'size' => 78,
+        'config_attr' => array('color','size')
+    ),
 );
 $obj->addProductRecord($rows);

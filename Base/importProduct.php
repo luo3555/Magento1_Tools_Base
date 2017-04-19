@@ -264,25 +264,28 @@ class ImportProduct
     public function setConfigurableField($entityId, $row)
     {
         $sql = "INSERT INTO `catalog_product_super_attribute` (product_id, attribute_id) VALUES (:product_id, :attribute_id)";
+        $sthAttr = $this->_pdo->prepare($sql);
+
+        $sql = "INSERT INTO `catalog_product_super_attribute_label` (product_super_attribute_id, store_id, use_default, value) VALUES (:product_super_attribute_id, :store_id, :use_default, :value)";
+        $sthAttrLabel = $this->_pdo->prepare($sql);
+
+
         $attributes = $row['config_attr'];
         foreach ($attributes as $code) {
             $band = array(
                     ':product_id' => $entityId,
                     ':attribute_id' => $this->_cache[$code]->attribute_id
                 );
-            $sth = $this->_pdo->prepare($sql);
-            $sth->execute($band);
+            $sthAttr->execute($band);
             $lastId = $this->_pdo->lastInsertId();
             if ($lastId) {
-                $sql = "INSERT INTO `catalog_product_super_attribute_label` (product_super_attribute_id, store_id, use_default, value) VALUES (:product_super_attribute_id, :store_id, :use_default, :value)";
                 $band = array(
                         ':product_super_attribute_id' => $lastId,
                         ':store_id' => self::DEFAULT_STORE,
                         ':use_default' => 1,
                         ':value' => $this->_cache[$code]->frontend_label
                     );
-                $sth = $this->_pdo->prepare($sql);
-                $sth->execute($band);
+                $sthAttrLabel->execute($band);
             }
             unset($band);
             unset($sth);
@@ -347,7 +350,7 @@ $rows = array(
         'status' => 1,
         'visibility' => 4,
         'tax_class_id' => 0,
-        'price' => 800,
+        'price' => 798,
         'category_id' => 11,
         'color' => '',
         'size' => '',
@@ -363,7 +366,7 @@ $rows = array(
         'status' => 1,
         'visibility' => 4,
         'tax_class_id' => 0,
-        'price' => 800,
+        'price' => 798,
         'category_id' => 11,
         'config_sku' => $configSku,
         'color' => 24,
@@ -379,7 +382,7 @@ $rows = array(
         'status' => 1,
         'visibility' => 4,
         'tax_class_id' => 0,
-        'price' => 800,
+        'price' => 798,
         'category_id' => 11,
         'config_sku' => $configSku,
         'color' => 20,

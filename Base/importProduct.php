@@ -344,6 +344,29 @@ class ImportProduct
     public function setProductStock($entityId, $row)
     {
         // DEFAULT_STOCK_ID
+        // cataloginventory_stock_item, cataloginventory_stock_status
+        if (isset($row['qty']) && isset($row['in_stock'])) {
+            $sql = "INSERT INTO `cataloginventory_stock_status` (product_id, website_id, stock_id, qty, stock_status) VALUES (:product_id, :website_id, :stock_id, :qty, :stock_status)";
+            $sth = $this->_pdo->prepare($sql);
+            $band = array(
+                    ':product_id' => $entityId,
+                    ':website_id' => self::DEFAULT_WEBSITE,
+                    ':stock_id' => self::DEFAULT_STOCK_ID,
+                    ':qty' => $row['qty'],
+                    ':stock_status' => $row['in_stock']
+                );
+            $sth->execute($band);
+
+            $sql = "INSERT INTO `cataloginventory_stock_item` (product_id, stock_id, qty, is_in_stock) VALUES (:product_id, :stock_id, :qty, :is_in_stock)";
+            $sth = $this->_pdo->prepare($sql);
+            $band = array(
+                    ':product_id' => $entityId,
+                    ':stock_id' => self::DEFAULT_STOCK_ID,
+                    ':qty' => $row['qty'],
+                    ':is_in_stock' => $row['in_stock']
+                );
+            $sth->execute($band);
+        }
     }
 
     public function assignedSimpleToConfigurable($productId, $parentId) {
@@ -360,6 +383,9 @@ class ImportProduct
         if ($row['type_id'] == 'configurable') {
             $row['has_options'] = 1;
             $row['required_options'] = 1;
+            // if not set this filed, in product detail page
+            // config product will not show swatch
+            $row['options_container'] = 'container1';
             // 'has_options', 'required_options'
         } else {
             $row['has_options'] = 0;
@@ -408,7 +434,9 @@ $rows = array(
         'category_id' => 10,
         'color' => '',
         'size' => '',
-        'config_attr' => array('color','size')
+        'config_attr' => array('color','size'),
+        'qty' => 10,
+        'in_stock' => 1,
     ),
     1 => array(
         'attribute_set_id' => 13, 
@@ -425,6 +453,8 @@ $rows = array(
         'config_sku' => $configSku,
         'color' => 24,
         'size' => 78,
+        'qty' => 10,
+        'in_stock' => 1,
     ),
     2 => array(
         'attribute_set_id' => 13, 
@@ -441,6 +471,8 @@ $rows = array(
         'config_sku' => $configSku,
         'color' => 20,
         'size' => 230,
+        'qty' => 10,
+        'in_stock' => 1,
     ),
 );
 $obj->addProductRecord($rows);

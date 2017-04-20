@@ -15,6 +15,7 @@ class ImportProduct
     const DEFAULT_STORE = 0;
     const DEFAULT_WEBSITE = 1;
     const DEFAULT_TAX_CLASS_ID = 0;
+    const DEFAULT_STOCK_ID = 1;
 
     protected $_pdo;
 
@@ -144,6 +145,18 @@ class ImportProduct
         return $this->_cache['customer_group'];
     }
 
+    public function getFrontendStores()
+    {
+        if (!isset($this->_cache['stores'])) {
+            $sql = "SELECT * FROM `core_store` WHERE website_id=:website_id";
+            $sth = $this->_pdo->prepare($sql);
+            $sth->execute(array(':website_id' => self::DEFAULT_WEBSITE
+                ));
+            $this->_cache['stores'] = $sth->fetchAll(PDO::FETCH_CLASS);
+        }
+        return $this->_cache['stores'];
+    }
+
     public function getIdBySku($sku)
     {
         if (!isset($this->_cache[$sku])) {
@@ -202,6 +215,8 @@ class ImportProduct
                 $this->setProductPrice($entityId, $row);
                 // set product to category
                 $this->assignedCagetories($entityId, $row);
+                // set product stock
+                $this->setProductStock($entityId, $row);
                 // set configurable product config field
                 if ($typeId == 'configurable') {
                     $this->setConfigurableField($entityId, $row);
@@ -232,7 +247,9 @@ class ImportProduct
     {
         // if not tier and group price
         // @TODO insert tier and group price
+        // If have category, when you change price you must chagne related table catalog_product_index_price
         $sql = "INSERT INTO `catalog_product_index_price` (entity_id, customer_group_id, website_id, tax_class_id, price, final_price, min_price, max_price) VALUES(:entity_id, :customer_group_id, :website_id, :tax_class_id, :price, :final_price, :min_price, :max_price)";
+        $sth = $this->_pdo->prepare($sql);
 
         foreach ($this->getGroups() as $group) {
             $band = array(
@@ -245,7 +262,6 @@ class ImportProduct
                     ':min_price' => $rowData['price'],
                     ':max_price' => $rowData['price'],
                 );
-            $sth = $this->_pdo->prepare($sql);
             $sth->execute($band);
         }
     }
@@ -254,10 +270,44 @@ class ImportProduct
     {
         if (isset($row['category_id'])) {
             // @TODO direct insert category id
-            // Current if not reindex product can not show on frontend
+            // related tables
+            // catalog_category_product_index, catalog_product_index_price
+            // @TODO catalog_product_index_price and product price
             $sql = "INSERT INTO `catalog_category_product` (category_id, product_id) VALUE(:category_id, :product_id)";
             $sth = $this->_pdo->prepare($sql);
+            // assigned product to category
             $sth->execute(array(':category_id' => $row['category_id'], ':product_id' => $entityId));
+
+            // product and store relationship
+            $sql = "INSERT INTO `catalog_category_product_index` (category_id, product_id, position, is_parent, store_id, visibility) VALUES (:category_id, :product_id, :position, :is_parent, :store_id, :visibility)";
+            $sth = $this->_pdo->prepare($sql);
+            foreach ($this->getFrontendStores() as $store) {
+                $band = array(
+                    ':category_id' => $row['category_id'],
+                    ':product_id' => $entityId,
+                    ':position' => isset($row['position']) ? isset($row['position']) : 0,
+                    ':is_parent' => 0, // @TODO not sure mean
+                    ':store_id' => self::DEFAULT_STOCK_ID,
+                    ':visibility' => isset($row['visibility']) ? $row['visibility'] : 1 // 0 is not show, defautl show on each cateogry
+                    );
+                $sth->execute($band);
+            }
+
+            // category price
+            $sql = "INSERT INTO `catalog_product_index_price` (customer_group_id, website_id, tax_class_id, price, final_price, min_price, max_price) VALUES (:customer_group_id, :website_id, :tax_class_id, :price, :final_price, :min_price, :max_price)";
+            $sth = $this->_pdo->prepare($sql);
+            foreach ($this->getGroups() as $group) {
+                $band = array(
+                        ':customer_group_id' => $group->customer_group_id,
+                        ':website_id' => self::DEFAULT_WEBSITE,
+                        ':tax_class_id' => $row['tax_class_id'],
+                        ':price' => $row['price'],
+                        ':final_price' => $row['price'],
+                        ':min_price' => $row['price'],
+                        ':max_price' => $row['price']
+                    );
+                $sth->execute($band);
+            }
         }
     }
 
@@ -268,7 +318,6 @@ class ImportProduct
 
         $sql = "INSERT INTO `catalog_product_super_attribute_label` (product_super_attribute_id, store_id, use_default, value) VALUES (:product_super_attribute_id, :store_id, :use_default, :value)";
         $sthAttrLabel = $this->_pdo->prepare($sql);
-
 
         $attributes = $row['config_attr'];
         foreach ($attributes as $code) {
@@ -290,6 +339,11 @@ class ImportProduct
             unset($band);
             unset($sth);
         }
+    }
+
+    public function setProductStock($entityId, $row)
+    {
+        // DEFAULT_STOCK_ID
     }
 
     public function assignedSimpleToConfigurable($productId, $parentId) {
@@ -351,7 +405,7 @@ $rows = array(
         'visibility' => 4,
         'tax_class_id' => 0,
         'price' => 798,
-        'category_id' => 11,
+        'category_id' => 10,
         'color' => '',
         'size' => '',
         'config_attr' => array('color','size')
@@ -364,10 +418,10 @@ $rows = array(
         'type_id' => 'simple', // configurable
         'vendor_id' => 1111,
         'status' => 1,
-        'visibility' => 4,
+        'visibility' => 2,
         'tax_class_id' => 0,
         'price' => 798,
-        'category_id' => 11,
+        'category_id' => 10,
         'config_sku' => $configSku,
         'color' => 24,
         'size' => 78,
@@ -380,10 +434,10 @@ $rows = array(
         'type_id' => 'simple', // configurable
         'vendor_id' => 1111,
         'status' => 1,
-        'visibility' => 4,
+        'visibility' => 2,
         'tax_class_id' => 0,
         'price' => 798,
-        'category_id' => 11,
+        'category_id' => 10,
         'config_sku' => $configSku,
         'color' => 20,
         'size' => 230,

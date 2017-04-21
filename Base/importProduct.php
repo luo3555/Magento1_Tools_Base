@@ -4,6 +4,7 @@
  * 2. About configurable product catalog_product_super_attribute define which attribute need config
  * 3. catalog_product_super_attribute_labe configurable product frontend swatch show label
  * 4. catalog_product_super_link, simple and configurable product relationship
+ * 5. configurable product must set attribute options_container it value must is 'container1'
  */
 class ImportProduct
 {

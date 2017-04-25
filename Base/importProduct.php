@@ -5,6 +5,7 @@
  * 3. catalog_product_super_attribute_labe configurable product frontend swatch show label
  * 4. catalog_product_super_link, simple and configurable product relationship
  * 5. catalog_product_index_price field tire_price and group_price only save min price
+ * 6. configurable product must set attribute options_container it value must is 'container1'
  */
 class ImportProduct
 {

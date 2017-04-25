@@ -4,6 +4,7 @@
  * 2. About configurable product catalog_product_super_attribute define which attribute need config
  * 3. catalog_product_super_attribute_labe configurable product frontend swatch show label
  * 4. catalog_product_super_link, simple and configurable product relationship
+ * 5. catalog_product_index_price field tire_price and group_price only save min price
  */
 class ImportProduct
 {
@@ -16,6 +17,7 @@ class ImportProduct
     const DEFAULT_WEBSITE = 1;
     const DEFAULT_TAX_CLASS_ID = 0;
     const DEFAULT_STOCK_ID = 1;
+    const ALL_GROUPS = 32000;
 
     protected $_pdo;
 
@@ -213,6 +215,9 @@ class ImportProduct
                 $this->assignedWebsite($entityId);
                 // set product price and tax class
                 $this->setProductPrice($entityId, $row);
+                // set product tier price
+                // Independent setting
+                // $this->setProductTierPrice($entityId, $row);
                 // set product to category
                 $this->assignedCagetories($entityId, $row);
                 // set product stock
@@ -266,6 +271,107 @@ class ImportProduct
         }
     }
 
+    public function setProductTierPrice($entityId, $row)
+    {
+        // 32000 mean this tier price adapter all groups
+        // 1. set tier price entity
+        // 2. set tier price index
+        // 3. set tier price in catalog list
+        $sql = "INSERT INTO `catalog_product_entity_tier_price` (entity_id, all_groups, customer_group_id, qty, value, website_id) VALUES (:entity_id, :all_groups, :customer_group_id, :qty, :value, :website_id)";
+        $tierEntity = $this->_pdo->prepare($sql);
+
+        $sql = "UPDATE `catalog_product_index_price` SET tier_price=:tire_price WHERE entity_id=:entity_id AND customer_group_id=:customer_group_id AND website_id=:website_id";
+        $tierIndex = $this->_pdo->prepare($sql);
+
+
+        if ($row['group_id'] == self::ALL_GROUPS) {
+            $band = array(
+                    ':entity_id' => $entityId,
+                    ':all_groups' => 1,
+                    ':customer_group_id' => 0,
+                    ':qty' => $row['qty'],
+                    ':value' => $row['tier_price'],
+                    ':website_id' => 0, // @TODO why here is Zero not self::DEFAULT_WEBSITE
+                );
+            $tierEntity->execute($band);
+            foreach ($this->getGroups() as $group) {
+                // @TODO update tier price min price
+                // upate catalog_product_index_price
+                $band = array(
+                        ':tire_price' => $row['tier_price'],
+                        ':entity_id' => $entityId,
+                        ':customer_group_id' => $group->customer_group_id,
+                        ':website_id' => self::DEFAULT_WEBSITE
+                    );
+                $tierIndex->execute($band);
+            }
+        } else {
+            $band = array(
+                    ':entity_id' => $entityId,
+                    ':all_groups' => 0,
+                    ':customer_group_id' => $row['group_id'],
+                    ':qty' => $row['qty'],
+                    ':value' => $row['tier_price'],
+                    ':website_id' => 0, // @TODO why here is Zero not self::DEFAULT_WEBSITE
+                );
+            $tierEntity->execute($band);
+            // upate catalog_product_index_price
+            $band = array(
+                    ':tire_price' => $row['tier_price'],
+                    ':entity_id' => $entityId,
+                    ':customer_group_id' => $row['group_id'],
+                    ':website_id' => self::DEFAULT_WEBSITE
+                );
+            $tierIndex->execute($band);
+        }
+    }
+
+    public function setProductGroupPrice($entityId, $row)
+    {
+        $sql = "INSERT INTO `catalog_product_entity_group_price` (entity_id, all_groups, customer_group_id, value, website_id) VALUES (:entity_id, :all_groups, :customer_group_id, :value, :website_id)";
+        $groupEntity = $this->_pdo->prepare($sql);
+
+        $sql = "INSERT INTO `catalog_product_index_group_price` (entity_id, customer_group_id, website_id, price) VALUES (:entity_id, :customer_group_id, :website_id, :price)";
+        $groupPriceIndex = $this->_pdo->prepare($sql);
+
+        $sql = "UPDATE `catalog_product_index_price` SET group_price=:group_price, final_price=:final_price, min_price=:min_price, max_price=:max_price WHERE entity_id=:entity_id AND customer_group_id=:customer_group_id AND website_id=:website_id";
+        $priceIndex = $this->_pdo->prepare($sql);
+
+        // catalog_product_entity_group_price
+        $band = array(
+                ':entity_id' => $entityId,
+                ':all_groups' => 0,
+                ':customer_group_id' => $row['group_id'],
+                ':value' => $row['group_price'],
+                ':website_id' => 0 // self::DEFAULT_WEBSITE
+            );
+        $groupEntity->execute($band);
+        // @TODO update tier price min price
+        
+        // add group price index
+        $band = array(
+                ':entity_id' => $entityId,
+                ':customer_group_id' => $row['group_id'],
+                ':website_id' => self::DEFAULT_WEBSITE,
+                ':price' => $row['group_price']
+            );
+        $groupPriceIndex->execute($band);
+
+        // upate catalog_product_index_price
+        $band = array(
+                ':entity_id' => $entityId,
+                ':final_price' => $row['group_price'],
+                ':min_price' => $row['group_price'],
+                ':max_price' => $row['group_price'],
+                ':group_price' => $row['group_price'],
+                ':entity_id' => $entityId,
+                ':customer_group_id' => $row['group_id'],
+                ':website_id' => self::DEFAULT_WEBSITE
+            );
+        $priceIndex->execute($band);
+
+    }
+
     public function assignedCagetories($entityId, $row)
     {
         if (isset($row['category_id'])) {
@@ -294,20 +400,21 @@ class ImportProduct
             }
 
             // category price
-            $sql = "INSERT INTO `catalog_product_index_price` (customer_group_id, website_id, tax_class_id, price, final_price, min_price, max_price) VALUES (:customer_group_id, :website_id, :tax_class_id, :price, :final_price, :min_price, :max_price)";
-            $sth = $this->_pdo->prepare($sql);
-            foreach ($this->getGroups() as $group) {
-                $band = array(
-                        ':customer_group_id' => $group->customer_group_id,
-                        ':website_id' => self::DEFAULT_WEBSITE,
-                        ':tax_class_id' => $row['tax_class_id'],
-                        ':price' => $row['price'],
-                        ':final_price' => $row['price'],
-                        ':min_price' => $row['price'],
-                        ':max_price' => $row['price']
-                    );
-                $sth->execute($band);
-            }
+            // @TODO setProductPrice have do
+            // $sql = "INSERT INTO `catalog_product_index_price` (customer_group_id, website_id, tax_class_id, price, final_price, min_price, max_price) VALUES (:customer_group_id, :website_id, :tax_class_id, :price, :final_price, :min_price, :max_price)";
+            // $sth = $this->_pdo->prepare($sql);
+            // foreach ($this->getGroups() as $group) {
+            //     $band = array(
+            //             ':customer_group_id' => $group->customer_group_id,
+            //             ':website_id' => self::DEFAULT_WEBSITE,
+            //             ':tax_class_id' => $row['tax_class_id'],
+            //             ':price' => $row['price'],
+            //             ':final_price' => $row['price'],
+            //             ':min_price' => $row['price'],
+            //             ':max_price' => $row['price']
+            //         );
+            //     $sth->execute($band);
+            // }
         }
     }
 
@@ -373,6 +480,44 @@ class ImportProduct
         $sql = "INSERT INTO `catalog_product_super_link` (product_id, parent_id) VALUES (:product_id, :parent_id)";
         $sth = $this->_pdo->prepare($sql);
         $sth->execute(array(':product_id' => $productId, ':parent_id' => $parentId));
+    }
+
+
+    /////////////////////////////////////////////////////////////////////
+    //
+    // START IMPORT GROUP PRICE AND TIER PRICE
+    //
+    /////////////////////////////////////////////////////////////////////
+    public function getEntityIdBySku($sku)
+    {
+        $sql = "SELECT entity_id FROM `catalog_product_entity` WHERE `sku` = :sku";
+        $sth = $this->_pdo->prepare($sql);
+        $sth->execute(array(':sku' => $sku));
+        $entityId = $sth->fetchColumn();
+        return (int)$entityId;
+    }
+
+    public function importGroupAndTierPrice($rows)
+    {
+        $currentSku = '';
+        $entityId = 0;
+        foreach ($rows as $row) {
+            if ($currentSku != $row['sku']) {
+                $currentSku = $row['sku'];
+                $entityId = $this->getEntityIdBySku($currentSku);
+            }
+
+            if ($entityId) {
+                // add group price
+                if (isset($row['group_price'])) {
+                    $this->setProductGroupPrice($entityId, $row);
+                }
+                // add tier price
+                if (isset($row['tier_price'])) {
+                    $this->setProductTierPrice($entityId, $row);
+                }
+            }
+        }
     }
 
     protected function addDefaultField($row)
@@ -475,5 +620,17 @@ $rows = array(
         'in_stock' => 1,
     ),
 );
+
+$tirePrice = array(
+        0 => array(
+            'sku' => $rows[2]['sku'],
+            // 'tier_price' => 66,
+            'qty' => 5,
+            'group_id' => 1,
+            'group_price' => 67
+        )
+    );
+
 $obj->addProductRecord($rows);
-// print_r($obj->getIdBySku('1492598284'));
+$obj->importGroupAndTierPrice($tirePrice);
+

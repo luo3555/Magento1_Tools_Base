@@ -183,6 +183,7 @@ class ImportProduct
             ////////////////////////////////////////////////////////
             if (!empty($insertCache)) {
                 $entityId = '';
+                // Add product entity
                 foreach ($insertCache as $table => $info) {
                     // start create entity
                     // create entity id
@@ -627,6 +628,13 @@ $tirePrice = array(
             // 'tier_price' => 66,
             'qty' => 5,
             'group_id' => 1,
+            'group_price' => 60
+        ),
+        1 => array(
+            'sku' => $rows[2]['sku'],
+            // 'tier_price' => 66,
+            'qty' => 5,
+            'group_id' => 0,
             'group_price' => 67
         )
     );

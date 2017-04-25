@@ -178,70 +178,80 @@ class ImportProduct
         foreach ($rows as $row) {
             // set attribute entity type id
             $row = $this->addDefaultField($row);
-            $typeId = $row['type_id'];
-
             $insertCache = $this->getInsertCache($row);
             ////////////////////////////////////////////////////////
             if (!empty($insertCache)) {
-                $entityId = '';
-                // Add product entity
-                foreach ($insertCache as $table => $info) {
-                    // start create entity
-                    // create entity id
-                    if (!empty($info['fields'])) {
-                        $sth = $this->_pdo->prepare($info['sql']);
-                        $band = array();
-                        // if is not catalog_product_entity table
-                        // add require default field
-                        if ($table == $this->_prefix) {
-                            foreach ($info['fields'] as $field => $type) {
-                                // if is default field
-                                $band[':' . $field] = $row[$field];
-                            }
-                            // create entity record
-                            $sth->execute($band);
-                            // get entity id
-                            $entityId = $this->_pdo->lastInsertId();
-                        } else {
-                            foreach ($info['fields'] as $field => $type) {
-                                $band[':attribute_id'] = $this->_cache[$field]->attribute_id;
-                                $band[':entity_id'] = $entityId;
-                                $band[':value'] = $row[$field];
-                                $sth = $this->_pdo->prepare($info['sql']);
-                                $sth->execute($band);
-                            }
-                        }
-                    }
+                try {
+                    $this->_pdo->beginTransaction();
+                    $this->_insertProduct($row, $insertCache);
+                    $this->_pdo->commit();
+                } catch (Exception $e) {
+                    $this->_pdo->rollBack();
                 }
-                // assigen product to main website
-                $this->assignedWebsite($entityId);
-                // set product price and tax class
-                $this->setProductPrice($entityId, $row);
-                // set product tier price
-                // Independent setting
-                // $this->setProductTierPrice($entityId, $row);
-                // set product to category
-                $this->assignedCagetories($entityId, $row);
-                // set product stock
-                $this->setProductStock($entityId, $row);
-                // set configurable product config field
-                if ($typeId == 'configurable') {
-                    $this->setConfigurableField($entityId, $row);
-                }
-                
-                // add configurable relationship
-                if (isset($row['config_sku'])) {
-                    $confEntityId = $this->getIdBySku($row['config_sku']);
-                    // if exist configurable product
-                    if ($confEntityId) {
-                        $this->assignedSimpleToConfigurable($entityId, $confEntityId);
-                    }
-                }
-                unset($confEntityId);
-                unset($entityId);
             }
             ////////////////////////////////////////////////////////
         }
+    }
+
+    protected function _insertProduct($row, $insertCache)
+    {
+        $entityId = '';
+        $typeId = $row['type_id'];
+        // Add product entity
+        foreach ($insertCache as $table => $info) {
+            // start create entity
+            // create entity id
+            if (!empty($info['fields'])) {
+                $sth = $this->_pdo->prepare($info['sql']);
+                $band = array();
+                // if is not catalog_product_entity table
+                // add require default field
+                if ($table == $this->_prefix) {
+                    foreach ($info['fields'] as $field => $type) {
+                        // if is default field
+                        $band[':' . $field] = $row[$field];
+                    }
+                    // create entity record
+                    $sth->execute($band);
+                    // get entity id
+                    $entityId = $this->_pdo->lastInsertId();
+                } else {
+                    foreach ($info['fields'] as $field => $type) {
+                        $band[':attribute_id'] = $this->_cache[$field]->attribute_id;
+                        $band[':entity_id'] = $entityId;
+                        $band[':value'] = $row[$field];
+                        $sth = $this->_pdo->prepare($info['sql']);
+                        $sth->execute($band);
+                    }
+                }
+            }
+        }
+        // assigen product to main website
+        $this->assignedWebsite($entityId);
+        // set product price and tax class
+        $this->setProductPrice($entityId, $row);
+        // set product tier price
+        // Independent setting
+        // $this->setProductTierPrice($entityId, $row);
+        // set product to category
+        $this->assignedCagetories($entityId, $row);
+        // set product stock
+        $this->setProductStock($entityId, $row);
+        // set configurable product config field
+        if ($typeId == 'configurable') {
+            $this->setConfigurableField($entityId, $row);
+        }
+        
+        // add configurable relationship
+        if (isset($row['config_sku'])) {
+            $confEntityId = $this->getIdBySku($row['config_sku']);
+            // if exist configurable product
+            if ($confEntityId) {
+                $this->assignedSimpleToConfigurable($entityId, $confEntityId);
+            }
+        }
+        unset($confEntityId);
+        unset($entityId);
     }
 
     protected function assignedWebsite($entityId)

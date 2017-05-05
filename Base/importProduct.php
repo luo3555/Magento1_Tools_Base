@@ -37,6 +37,7 @@ class ImportProduct
     {
         try {
             $this->_pdo = new PDO(self::DSN, self::USER, self::PASSWORD, array(PDO::ATTR_PERSISTENT => true));
+            $this->_pdo->exec("SET NAMES 'utf8'");
         } catch (Exception $e) {
             $this->_error($e->getMessage());
         }
@@ -176,21 +177,28 @@ class ImportProduct
         // current attribute set cache
         // insert record one by one
         foreach ($rows as $row) {
-            // set attribute entity type id
-            $row = $this->addDefaultField($row);
-            $insertCache = $this->getInsertCache($row);
-            ////////////////////////////////////////////////////////
-            if (!empty($insertCache)) {
-                try {
-                    $this->_pdo->beginTransaction();
-                    $this->_insertProduct($row, $insertCache);
-                    $this->_pdo->commit();
-                } catch (Exception $e) {
-                    $this->_pdo->rollBack();
-                }
-            }
-            ////////////////////////////////////////////////////////
+            $this->addProductOneRecord($row);
         }
+    }
+
+    public function addProductOneRecord($row)
+    {
+        // set attribute entity type id
+        $row = $this->addDefaultField($row);
+        $insertCache = $this->getInsertCache($row);
+        ////////////////////////////////////////////////////////
+        if (!empty($insertCache)) {
+            try {
+                // $this->_pdo->beginTransaction();
+                $this->_insertProduct($row, $insertCache);
+                // $this->_pdo->commit();
+            } catch (Exception $e) {
+                // $this->_pdo->rollBack();
+                echo $e->getMessage();
+                exit;
+            }
+        }
+        ////////////////////////////////////////////////////////
     }
 
     protected function _insertProduct($row, $insertCache)
@@ -400,15 +408,17 @@ class ImportProduct
             $sql = "INSERT INTO `catalog_category_product_index` (category_id, product_id, position, is_parent, store_id, visibility) VALUES (:category_id, :product_id, :position, :is_parent, :store_id, :visibility)";
             $sth = $this->_pdo->prepare($sql);
             foreach ($this->getFrontendStores() as $store) {
-                $band = array(
-                    ':category_id' => $row['category_id'],
-                    ':product_id' => $entityId,
-                    ':position' => isset($row['position']) ? isset($row['position']) : 0,
-                    ':is_parent' => 0, // @TODO not sure mean
-                    ':store_id' => self::DEFAULT_STOCK_ID,
-                    ':visibility' => isset($row['visibility']) ? $row['visibility'] : 1 // 0 is not show, defautl show on each cateogry
+                if ($store->store_id) {
+                    $band = array(
+                        ':category_id' => $row['category_id'],
+                        ':product_id' => $entityId,
+                        ':position' => isset($row['position']) ? isset($row['position']) : 0,
+                        ':is_parent' => 1, // @TODO not sure mean
+                        ':store_id' => $store->store_id ,// self::DEFAULT_STOCK_ID,
+                        ':visibility' => isset($row['visibility']) ? $row['visibility'] : 1 // 0 is not show, defautl show on each cateogry
                     );
-                $sth->execute($band);
+                    $sth->execute($band);
+                }
             }
 
             // category price
@@ -652,4 +662,4 @@ $tirePrice = array(
 
 $obj->addProductRecord($rows);
 $obj->importGroupAndTierPrice($tirePrice);
-
+//*/

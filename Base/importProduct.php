@@ -13,6 +13,10 @@ class ImportProduct
     const USER = 'root';
     const PASSWORD = '12345abc';
 
+    // After import finish, direct show on the product list
+    // Weather status is enable or disable
+    const DIRECT_SHOW_ON_LIST = false;
+
     const ATTR_ENTITY_TYPE_ID = 4;
     const DEFAULT_STORE = 0;
     const DEFAULT_WEBSITE = 1;
@@ -405,19 +409,25 @@ class ImportProduct
             $sth->execute(array(':category_id' => $row['category_id'], ':product_id' => $entityId));
 
             // product and store relationship
-            $sql = "INSERT INTO `catalog_category_product_index` (category_id, product_id, position, is_parent, store_id, visibility) VALUES (:category_id, :product_id, :position, :is_parent, :store_id, :visibility)";
-            $sth = $this->_pdo->prepare($sql);
-            foreach ($this->getFrontendStores() as $store) {
-                if ($store->store_id) {
-                    $band = array(
-                        ':category_id' => $row['category_id'],
-                        ':product_id' => $entityId,
-                        ':position' => isset($row['position']) ? isset($row['position']) : 0,
-                        ':is_parent' => 1, // @TODO not sure mean
-                        ':store_id' => $store->store_id ,// self::DEFAULT_STOCK_ID,
-                        ':visibility' => isset($row['visibility']) ? $row['visibility'] : 1 // 0 is not show, defautl show on each cateogry
-                    );
-                    $sth->execute($band);
+            // 
+            // if product id exist in this table
+            // this product will direct show on product list page
+            // If not insert data to this table, when you save product on edit page event will auto add record to this table
+            if (self::DIRECT_SHOW_ON_LIST) {
+                $sql = "INSERT INTO `catalog_category_product_index` (category_id, product_id, position, is_parent, store_id, visibility) VALUES (:category_id, :product_id, :position, :is_parent, :store_id, :visibility)";
+                $sth = $this->_pdo->prepare($sql);
+                foreach ($this->getFrontendStores() as $store) {
+                    if ($store->store_id) {
+                        $band = array(
+                            ':category_id' => $row['category_id'],
+                            ':product_id' => $entityId,
+                            ':position' => isset($row['position']) ? isset($row['position']) : 0,
+                            ':is_parent' => 1, // @TODO not sure mean
+                            ':store_id' => $store->store_id ,// self::DEFAULT_STOCK_ID,
+                            ':visibility' => isset($row['visibility']) ? $row['visibility'] : 1 // 0 is not show, defautl show on each cateogry
+                        );
+                        $sth->execute($band);
+                    }
                 }
             }
 

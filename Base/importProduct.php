@@ -61,6 +61,36 @@ class ImportProduct
         return $this->_cache[$attributeCode];
     }
 
+    public function getOptionValue($attributeCode, $optionCode)
+    {
+        $attribute = $this->_cache[$attributeCode];
+        if ($optionCode && $attribute->attribute_id) {
+            $sql = "SELECT  eao.option_id, store_id, `value`  FROM `eav_attribute_option_value`  AS eaov LEFT JOIN `eav_attribute_option` AS eao ON eaov.option_id=eao.option_id WHERE store_id=0 AND eaov.`value`=:optionCode AND eao.`attribute_id`=:attributeId";
+            $sth = $this->_pdo->prepare($sql);
+            $sth->execute(array(':optionCode' => $optionCode, ':attributeId' => $attribute->attribute_id));
+            $option = $sth->fetchObject();
+        }
+        return $option;
+    }
+
+    public function setOptionValue($attributeId, $optionCode)
+    {
+        $firstSql = "INSERT INTO `eav_attribute_option`  (`attribute_id`,`sort_order`) VALUES (:attribute_id,0)";
+        $firstSth = $this->_pdo->prepare($firstSql);
+        $firstSth->execute(array(':attribute_id' => $attributeId));
+        $optionId = $this->_pdo->lastInsertId();
+
+        $sql = "INSERT INTO `eav_attribute_option_value`  (`option_id`,`store_id`,`value`) VALUES (:option_id,:store_id,:value)";
+        $sth = $this->_pdo->prepare($sql);
+        $sth->execute(array(':option_id' => $optionId , ':store_id' => 0, 'value' => $optionCode));
+
+        foreach ($this->getFrontendStores() as $store) {
+            $sql = "INSERT INTO `eav_attribute_option_value`  (`option_id`,`store_id`,`value`) VALUES (:option_id,:store_id,:value)";
+            $sth = $this->_pdo->prepare($sql);
+            $sth->execute(array(':option_id' => $optionId , ':store_id' => $store->store_id, 'value' => $optionCode));
+        }
+    }
+
     /**
      * Access this function we can auto get table and insert sql and need insert fields
      * 
@@ -229,9 +259,26 @@ class ImportProduct
                     $entityId = $this->_pdo->lastInsertId();
                 } else {
                     foreach ($info['fields'] as $field => $type) {
+                        if (!isset($row[$field])) {
+                            continue;
+                        }
+                        if (!$row[$field]) {
+                            continue;
+                        }
+                        if ($this->_cache[$field]->frontend_input == 'select' &&
+                            ($this->_cache[$field]->source_model == null || $this->_cache[$field]->source_model == 'eav/entity_attribute_source_table')) {
+                            // if option not init
+                            $option = $this->getOptionValue($field, $row[$field]);
+                            if (!$option) {
+                                $this->setOptionValue($this->_cache[$field]->attribute_id ,$row[$field]);
+                            }
+                            $band[':value'] = $this->getOptionValue($field, $row[$field])->option_id;
+                        } else {
+                            $band[':value'] = $row[$field];
+                        }
+
                         $band[':attribute_id'] = $this->_cache[$field]->attribute_id;
                         $band[':entity_id'] = $entityId;
-                        $band[':value'] = $row[$field];
                         $sth = $this->_pdo->prepare($info['sql']);
                         $sth->execute($band);
                     }
@@ -460,6 +507,12 @@ class ImportProduct
 
         $attributes = $row['config_attr'];
         foreach ($attributes as $code) {
+            // check attribute code exist in cache
+            if (!$this->hasCache($code)) {
+                // get this attribute
+                $this->getAttribute($code);
+            }
+            
             $band = array(
                     ':product_id' => $entityId,
                     ':attribute_id' => $this->_cache[$code]->attribute_id
@@ -575,7 +628,18 @@ class ImportProduct
         return $row;
     }
 
+    public function getCache($key)
+    {
+        if ($this->hasCache($key)) {
+            return $this->_cache[$key];
+        }
+        return null;
+    }
 
+    public function hasCache($key)
+    {
+        return isset($this->_cache[$key]);
+    }
 
     // Create simple product
     protected function _error($msg)

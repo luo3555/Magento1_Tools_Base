@@ -35,7 +35,7 @@ require 'DataSource.php';
 
 class Mage_Shell_Test extends Mage_Shell_Abstract
 {
-    const DEFAULT_CATEGORY = 2;
+    const DEFAULT_CATEGORY = 442;
 
     const IMPORT_CSV_FILE = 'categoryTree.csv';
 
@@ -142,6 +142,10 @@ class Mage_Shell_Test extends Mage_Shell_Abstract
             }
 
             foreach ($list as $key => $data) {
+                if ($key == '' || is_null($key)) {
+                    die('Tree Key is empty !');
+                }
+
                 $path = explode('.', $key);
                 $item = implode('_', $path);
 

@@ -237,7 +237,7 @@ class ImportProduct
 
     public function getIdBySku($sku)
     {
-        if (!isset($this->_cache[$sku])) {
+        if (!isset($this->_cache[$sku]) || empty($this->_cache[$sku])) {
             $sql = "SELECT entity_id FROM `catalog_product_entity` WHERE `sku`=:sku";
             $sth = $this->_pdo->prepare($sql);
             $sth->execute(array(':sku' => $sku));
@@ -281,7 +281,9 @@ class ImportProduct
 
     public function _insertProduct($row, $insertCache)
     {
-        $entityId = '';
+        // if exist and not more language
+        $entityId = (int)$this->getIdBySku($row['sku']);
+
         $typeId = $row['type_id'];
         $storeId = isset($row['store_id']) ? $row['store_id'] : self::DEFAULT_STORE ;
 
@@ -296,9 +298,7 @@ class ImportProduct
                 // add require default field
                 if ($table == $this->_prefix) {
                     // if is add multi language
-                    if ($this->_addLanguage) {
-                        $entityId = $this->getIdBySku($row['sku']);
-                    } else {
+                    if (!$entityId) {
                         foreach ($info['fields'] as $field => $type) {
                             // if is default field
                             $band[':' . $field] = $row[$field];
@@ -335,7 +335,8 @@ class ImportProduct
                 }
             }
         }
-        if (!$this->_addLanguage) {
+        // The following attribute is global, only need import once
+        if ($row['store_id']==self::DEFAULT_STORE) {
             // assigen product to main website
             $this->assignedWebsite($entityId);
             // set product price and tax class
@@ -348,6 +349,13 @@ class ImportProduct
             $this->assignedCagetories($entityId, $row);
             // set product stock
             $this->setProductStock($entityId, $row);
+            // set product gallery
+            if (isset($row['gallery']) && is_array($row['gallery'])) {
+                foreach ($row['gallery'] as $gallery) {
+                    $this->setMediaGallery($entityId, $gallery);
+                }
+            }
+
             // set configurable product config field
             if ($typeId == 'configurable') {
                 $this->setConfigurableField($entityId, $row);

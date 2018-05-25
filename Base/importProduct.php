@@ -51,7 +51,7 @@ class ImportProduct
     public function __construct($dsn=null, $user=null, $password=null)
     {
         try {
-            if (!empty($dsn) && !empty($user) && !empty($password)) {
+            if (!empty($dsn) && !empty($user) && !is_null($password)) {
                 $this->_pdo = new PDO($dsn, $user, $password, array(PDO::ATTR_PERSISTENT => true));
             } else {
                 $this->_pdo = new PDO(self::DSN, self::USER, self::PASSWORD, array(PDO::ATTR_PERSISTENT => true));
@@ -799,6 +799,9 @@ class ImportProduct
     public function insertProductFlatData($entityId, $row)
     {
         $row['entity_id'] = $entityId;
+
+        // special fields
+        $row['special_price'] = $row['special_price'] == 0 ? null : $row['special_price'] ;
 
         // Note:
         // store 0 not need flat table, flat table suffix start from 1

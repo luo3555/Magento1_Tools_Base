@@ -24,6 +24,8 @@ class ImportProduct
 
     protected $_prefix = 'catalog_product_entity';
 
+    protected $_flatPrefix = 'catalog_product_flat';
+
     /** @var array
      *  In the array's field will not search attribute table, they are both in the $_prefix table,
      *  All value will direct insert to $_prefix table
@@ -38,7 +40,8 @@ class ImportProduct
      *  eg: tier_price, group_price they are both have independent table
      */
     protected $_independentFields = array(
-        'tier_price', 'group_price'
+        'tier_price', 'group_price' ,
+        'attribute_groups' ,
     );
 
     protected $_cache = array();
@@ -335,8 +338,12 @@ class ImportProduct
                 }
             }
         }
+
+        // add data to flat table, if exist
+        $this->insertProductFlatData($entityId, $row);
+
         // The following attribute is global, only need import once
-        if ($row['store_id']==self::DEFAULT_STORE) {
+        if ($row['store_id']===self::DEFAULT_STORE) {
             // assigen product to main website
             $this->assignedWebsite($entityId);
             // set product price and tax class
@@ -789,6 +796,75 @@ class ImportProduct
         }
     }
 
+    public function insertProductFlatData($entityId, $row)
+    {
+        $row['entity_id'] = $entityId;
+
+        // Note:
+        // store 0 not need flat table, flat table suffix start from 1
+        // eg: catalog_product_flat_1
+        if (isset($row['store_id'])) {
+            $storeId = $row['store_id'];
+            if ($storeId) {
+                $flatTable = sprintf('%s_%d', $this->_flatPrefix, $storeId);
+                if ($this->existTable($flatTable)) {
+                    $fields = $this->getTableFields($flatTable);
+                    // get intersection
+                    $fields = array_intersect($fields, array_keys($row));
+                    // set insert data
+                    $insertData = [];
+                    foreach ($fields as $field) {
+                        $insertData[':'.$field] = $row[$field];
+                    }
+                    if (!empty($fields)) {
+                        // add special field
+                        // @TODO need get url rewrite
+                        $fields[] = 'url_path';
+                        $insertData[':url_path'] = strtolower($row['url_key']) . '.html';
+
+                        // insert to flat table
+                        $sql = "INSERT IGNORE INTO `%s` (%s) VALUES(%s)";
+                        $sql = sprintf($sql, $flatTable, implode(',', $fields), implode(',', array_keys($insertData)));
+                        $sth = $this->_pdo->prepare($sql);
+                        $sth->execute($insertData);
+                    }
+                }
+            }
+        }
+    }
+
+    public function existTable($table)
+    {
+        if (!isset($this->_cache[$table])) {
+            $sql = "SHOW TABLES LIKE :table";
+            $sth = $this->_pdo->prepare($sql);
+            $sth->execute([':table' => $table]);
+            $this->_cache[$table] = $sth->rowCount();
+        }
+        return $this->_cache[$table];
+    }
+
+    public function getTableFields($table)
+    {
+        if (!isset($this->_cache[$table . '_fields'])) {
+            $fields = [];
+
+            $sql = "SHOW COLUMNS FROM %s";
+            $sth = $this->_pdo->prepare(sprintf($sql, $table));
+            $sth->execute();
+            $columns  = $sth->fetchAll(PDO::FETCH_NUM);
+            if (!empty($columns)) {
+                foreach ($columns as $field) {
+                    $fields[] = $field[0];
+                }
+            }
+            $this->_cache[$table . '_fields'] = $fields;
+        }
+        return $this->_cache[$table . '_fields'];
+    }
+
+
+
     protected function addDefaultField($row)
     {
         // set attribute entity type id
@@ -1070,4 +1146,39 @@ $productTmp = array (
 );
 $obj->setAddLanguage(true);
 $obj->addProductRecord($productTmp);
+//*/
+/**
+// Import product data to flat table, Note: eneity_id is required
+$obj = new ImportProduct();
+$row =         array (
+    'sku' => '9999999',
+    'store_id' => 1,
+    'type_id' => 'simple',
+    'vendor_id' => 9,
+    'attribute_set_id' => 15,
+    'name' => 'Лин Shanshan 2018 оны хавар, зуны шидэт номын хавтасны цамц хэвлэх сур Siamese Flounced өмд хувцас',
+    'price' => 349.69999999999999,
+    'special_price' => '',
+    'short_description' => '&nbsp;',
+    'description' => '&nbsp;',
+    'detail_info' => '&nbsp;',
+    'min_sale_qty' => NULL,
+    'qty' => '2',
+    'weight' => 0.10000000000000001,
+    'in_stock' => 1,
+    'status' => 1,
+    'visibility' => 1,
+    'url_key' => '03599033985201',
+    'tax_class_id' => 0,
+    'config_sku' => '999999',
+    'grasp_type' => 0,
+    'grasp_num_id' => '566359563692',
+    'custom_option_0_code' => '20509',
+    'custom_option_0' => '938381723',
+    'custom_option_1_code' => '1627207',
+    'custom_option_1' => '918495117',
+);
+$entityId = 591;
+$obj->insertProductFlatData($entityId, $row);
+echo PHP_EOL;
 //*/
